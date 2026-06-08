@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>培正道學車紀錄助手</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js" type="module"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js" type="module"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js" type="module"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
+    body {
+      font-family: 'Inter', 'Noto Sans TC', sans-serif;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #f1f1f1;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+
+  <div id="app" class="max-w-md mx-auto bg-white min-h-screen shadow-lg flex flex-col relative pb-24">
+    
+    <header class="bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-5 py-5 rounded-b-2xl shadow-md">
+      <div class="flex justify-between items-center">
+        <div>
+          <h1 class="text-xl font-bold tracking-wide">培正道考車紀錄</h1>
+          <p class="text-xs text-blue-100 mt-1">學車、費用及培正道 4 條路線攻略一網打盡</p>
+        </div>
+        <div class="bg-white/20 p-2 rounded-lg text-xs" id="syncStatus">
+          <i class="fa-solid fa-spinner animate-spin mr-1"></i> 載入中
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 mt-5">
+        <div class="bg-white/10 backdrop-blur-sm rounded-xl p-3">
+          <div class="text-xs text-blue-100">已學總時數</div>
+          <div class="text-2xl font-bold mt-1" id="totalHours">0 <span class="text-sm font-normal">小時</span></div>
+        </div>
+        <div class="bg-white/10 backdrop-blur-sm rounded-xl p-3">
+          <div class="text-xs text-blue-100">學車總支出</div>
+          <div class="text-2xl font-bold mt-1" id="totalCost">HK$0</div>
+        </div>
+      </div>
+
+      <div id="examCountdownCard" class="mt-4 bg-yellow-400 text-slate-900 rounded-xl p-3 flex items-center justify-between hidden">
+        <div class="flex items-center space-x-3">
+          <span class="text-2xl">🚗</span>
+          <div>
+            <div class="text-xs font-semibold text-slate-700">路試倒數</div>
+            <div class="text-sm font-bold" id="examDateText">未設定考試日期</div>
+          </div>
+        </div>
+        <div class="text-right">
+          <div class="text-2xl font-black" id="daysLeft">--</div>
+          <div class="text-[10px] uppercase font-bold text-slate-600">Days Left</div>
+        </div>
+      </div>
+    </header>
+
+    <main class="flex-1 px-4 py-5 overflow-y-auto text-[15px]">
+      
+      <section id="tab-lessons" class="tab-content space-y-5">
+        <div class="flex justify-between items-center">
+          <h2 class="text-lg font-bold text-slate-800 flex items-center">
+            <span class="w-2 h-5.5 bg-blue-600 rounded-full mr-2"></span>課堂紀錄
+          </h2>
+          <button id="addLessonBtn" onclick="openModal('lessonModal')" class="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-1.5 rounded-xl text-[15px] font-semibold flex items-center shadow-md transition hidden">
+            <i class="fa-solid fa-plus mr-1"></i> 新增課堂
+          </button>
+        </div>
+
+        <div id="lessonsList" class="space-y-6"></div>
+      </section>
+
+      <section id="tab-expenses" class="tab-content space-y-5 hidden">
+        <div class="flex justify-between items-center">
+          <h2 class="text-lg font-bold text-slate-800 flex items-center">
+            <span class="w-2 h-5.5 bg-indigo-600 rounded-full mr-2"></span>政府及其他開支
+          </h2>
+          <button id="addExpenseBtn" onclick="openModal('expenseModal')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-xl text-[15px] font-semibold flex items-center shadow-md transition hidden">
+            <i class="fa-solid fa-plus mr-1"></i> 新增開支
+          </button>
+        </div>
+
+        <div id="quickExpenseCard" class="bg-indigo-50 border border-indigo-100 rounded-xl p-3.5 hidden">
+          <p class="text-[13px] font-bold text-indigo-700 mb-2">常用開支快捷新增：</p>
+          <div class="flex flex-wrap gap-2">
+            <button onclick="addQuickExpense('學牌 (學習駕駛執照)', 548)" class="bg-white border border-indigo-200 text-indigo-700 text-xs px-3 py-1.5 rounded-lg hover:bg-indigo-100 font-medium transition">學牌 $548</button>
+            <button onclick="addQuickExpense('筆試考試費', 510)" class="bg-white border border-indigo-200 text-indigo-700 text-xs px-3 py-1.5 rounded-lg hover:bg-indigo-100 font-medium transition">筆試 $510</button>
+            <button onclick="addQuickExpense('租車路考費', 2000)" class="bg-white border border-indigo-200 text-indigo-700 text-xs px-3 py-1.5 rounded-lg hover:bg-indigo-100 font-medium transition">租車考試 $2000</button>
+          </div>
+        </div>
+
+        <div id="expensesList" class="space-y-3"></div>
+      </section>
+
+      <section id="tab-routes" class="tab-content space-y-5 hidden">
+        <div class="bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-2xl p-4.5 shadow-md">
+          <h3 class="font-bold text-base flex items-center">
+            <i class="fa-solid fa-circle-info mr-2"></i> 培正道考車中心資訊
+          </h3>
+          <p class="text-xs text-emerald-50 mt-1 leading-relaxed">
+            培正道為香港極具挑戰性的駕駛考試中心之一。主要考車車型為輕型貨車（Van仔）及私家車。共有 4 條經典路線。
+          </p>
+          <a href="https://drive.google.com/drive/folders/1Hioim9PUcxrk_pvC6-eLw_MlIVmWK6sd" target="_blank" class="mt-3.5 inline-flex items-center justify-center w-full bg-white text-emerald-700 text-[13px] font-bold py-2 px-4 rounded-xl shadow hover:bg-emerald-50 transition">
+            <i class="fa-solid fa-file-pdf mr-1.5"></i> 開啟培正道 4 條路線詳細攻略 (Google Drive)
+          </a>
+        </div>
+
+        <h2 class="text-lg font-bold text-slate-800 flex items-center mt-6">
+          <span class="w-2 h-5.5 bg-teal-600 rounded-full mr-2"></span>培正道 4 條考車路線
+        </h2>
+
+        <div class="space-y-3.5">
+          <div class="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm">
+            <button onclick="toggleRoute('route1')" class="w-full flex justify-between items-center p-3.5 bg-slate-50 hover:bg-slate-100 transition text-left">
+              <div>
+                <span class="bg-blue-100 text-blue-800 text-[10px] font-extrabold px-1.5 py-0.5 rounded-md mr-1.5">路線一</span>
+                <span class="font-bold text-slate-800 text-[15px]">佛光街線 (常盛街方向)</span>
+              </div>
+              <i id="route1-icon" class="fa-solid fa-chevron-down text-slate-400 text-xs transition-transform duration-200"></i>
+            </button>
+            <div id="route1-content" class="p-3.5 border-t border-slate-100 text-[13px] space-y-3 hidden">
+              <p class="text-slate-600"><strong>🗺️ 途經路段：</strong>培正道試場 ➔ 培正道 ➔ 常盛街 ➔ 佛光街 ➔ 培正道 ➔ 培正道試場</p>
+              <p class="text-red-600"><strong>⚠️ 難點：</strong>常盛街出培正道容易有死車，要注意爬頭超越障礙物三部曲。</p>
+            </div>
+          </div>
+          <div class="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm">
+            <button onclick="toggleRoute('route2')" class="w-full flex justify-between items-center p-3.5 bg-slate-50 hover:bg-slate-100 transition text-left">
+              <div>
+                <span class="bg-indigo-100 text-indigo-800 text-[10px] font-extrabold px-1.5 py-0.5 rounded-md mr-1.5">路線二</span>
+                <span class="font-bold text-slate-800 text-[15px]">公主道線 (愛民邨方向)</span>
+              </div>
+              <i id="route2-icon" class="fa-solid fa-chevron-down text-slate-400 text-xs transition-transform duration-200"></i>
+            </button>
+            <div id="route2-content" class="p-3.5 border-t border-slate-100 text-[13px] space-y-3 hidden">
+              <p class="text-slate-600"><strong>🗺️ 途經路段：</strong>培正道試場 ➔ 培正道 ➔ 公主道連接路 ➔ 忠孝街 ➔ 佛光街 ➔ 培正道試場</p>
+            </div>
+          </div>
+          <div class="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm">
+            <button onclick="toggleRoute('route3')" class="w-full flex justify-between items-center p-3.5 bg-slate-50 hover:bg-slate-100 transition text-left">
+              <div>
+                <span class="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-1.5 py-0.5 rounded-md mr-1.5">路線三</span>
+                <span class="font-bold text-slate-800 text-[15px]">何文田線 (常興街方向)</span>
+              </div>
+              <i id="route3-icon" class="fa-solid fa-chevron-down text-slate-400 text-xs transition-transform duration-200"></i>
+            </button>
+            <div id="route3-content" class="p-3.5 border-t border-slate-100 text-[13px] space-y-3 hidden">
+              <p class="text-slate-600"><strong>🗺️ 途經路段：</strong>培正道試場 ➔ 培正道 ➔ 常興街 ➔ 常盛街 ➔ 培正道 ➔ 培正道試場</p>
+            </div>
+          </div>
+          <div class="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm">
+            <button onclick="toggleRoute('route4')" class="w-full flex justify-between items-center p-3.5 bg-slate-50 hover:bg-slate-100 transition text-left">
+              <div>
+                <span class="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-1.5 py-0.5 rounded-md mr-1.5">路線四</span>
+                <span class="font-bold text-slate-800 text-[15px]">迦密村街線 (培正道下段)</span>
+              </div>
+              <i id="route4-icon" class="fa-solid fa-chevron-down text-slate-400 text-xs transition-transform duration-200"></i>
+            </button>
+            <div id="route4-content" class="p-3.5 border-t border-slate-100 text-[13px] space-y-3 hidden">
+              <p class="text-slate-600"><strong>🗺️ 途經路段：</strong>培正道試場 ➔ 培正道 ➔ 迦密村街 ➔ 孝民街 ➔ 忠孝街 ➔ 培正道試場</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-settings" class="tab-content space-y-5 hidden">
+        <h2 class="text-lg font-bold text-slate-800 flex items-center">
+          <span class="w-2 h-5.5 bg-slate-600 rounded-full mr-2"></span>系統與考期設定
+        </h2>
+        
+        <div id="settingsContent" class="space-y-4">
+          <div class="bg-white border border-slate-200 rounded-2xl p-4.5 shadow-sm space-y-4">
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-1">選擇路試日期與時間</label>
+              <input type="datetime-local" id="settingsExamDate" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 focus:outline-none focus:border-blue-600">
+            </div>
+            <button onclick="saveExamDate()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl shadow-md transition">
+              確認並儲存考期
+            </button>
+          </div>
+
+          <div id="logoutCard" class="bg-white border border-slate-200 rounded-2xl p-4.5 shadow-sm hidden">
+            <p class="text-xs text-slate-500 mb-3" id="currentUserEmail"></p>
+            <button onclick="window.logoutGoogle()" class="w-full bg-slate-100 hover:bg-slate-200 text-red-600 font-bold py-2.5 px-4 rounded-xl transition border border-slate-200">
+              <i class="fa-solid fa-right-from-bracket mr-1"></i> 登出 Google 帳戶
+            </button>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <nav class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/95 backdrop-blur-md border-t border-slate-100 grid grid-cols-4 py-2 px-1 z-30 shadow-lg">
+      <button onclick="switchTab('lessons')" id="btn-tab-lessons" class="flex flex-col items-center justify-center py-1 text-blue-600 font-medium">
+        <i class="fa-solid fa-calendar-check text-lg"></i>
+        <span class="text-[12px] mt-1 font-semibold">課堂紀錄</span>
+      </button>
+      <button onclick="switchTab('expenses')" id="btn-tab-expenses" class="flex flex-col items-center justify-center py-1 text-slate-400 hover:text-slate-600">
+        <i class="fa-solid fa-wallet text-lg"></i>
+        <span class="text-[12px] mt-1 font-semibold">其他費用</span>
+      </button>
+      <button onclick="switchTab('routes')" id="btn-tab-routes" class="flex flex-col items-center justify-center py-1 text-slate-400 hover:text-slate-600">
+        <i class="fa-solid fa-road text-lg"></i>
+        <span class="text-[12px] mt-1 font-semibold">培正路線</span>
+      </button>
+      <button onclick="switchTab('settings')" id="btn-tab-settings" class="flex flex-col items-center justify-center py-1 text-slate-400 hover:text-slate-600">
+        <i class="fa-solid fa-gear text-lg"></i>
+        <span class="text-[12px] mt-1 font-semibold">設定</span>
+      </button>
+    </nav>
+
+    <div id="lessonModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 hidden">
+      <div class="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl">
+        <div class="flex justify-between items-center mb-4"><h3 id="lessonModalTitle" class="text-base font-bold">新增學車堂數</h3><button onclick="closeModal('lessonModal')" class="text-slate-400"><i class="fa-solid fa-xmark"></i></button></div>
+        <form id="lessonForm" onsubmit="handleLessonSubmit(event)" class="space-y-3">
+          <input type="hidden" id="lessonId">
+          <div><label class="block text-xs font-bold mb-1">上課日期</label><input type="date" id="lessonDate" required class="w-full border rounded-xl p-2"></div>
+          <div class="grid grid-cols-2 gap-2">
+            <div><label class="block text-xs font-bold mb-1">開始時間</label><input type="time" id="lessonStartTime" required onchange="calculateHours()" class="w-full border rounded-xl p-2"></div>
+            <div><label class="block text-xs font-bold mb-1">下課時間</label><input type="time" id="lessonEndTime" required onchange="calculateHours()" class="w-full border rounded-xl p-2"></div>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div><label class="block text-xs font-bold mb-1">時數</label><input type="number" id="lessonHours" step="0.01" readonly class="w-full bg-slate-100 border rounded-xl p-2"></div>
+            <div><label class="block text-xs font-bold mb-1">費用 (HKD)</label><input type="number" id="lessonCost" required class="w-full border rounded-xl p-2"></div>
+          </div>
+          <div><label class="block text-xs font-bold mb-1">上課地點</label><input type="text" id="lessonLocationSelect" value="培正道" class="w-full border rounded-xl p-2"></div>
+          <div><label class="block text-xs font-bold mb-1">狀態</label>
+            <select id="lessonStatus" class="w-full border rounded-xl p-2"><option value="attended">已上課</option><option value="unattended">未上課</option></select>
+          </div>
+          <div><label class="block text-xs font-bold mb-1">筆記</label><textarea id="lessonNotes" class="w-full border rounded-xl p-2" rows="2"></textarea></div>
+          <button type="submit" class="w-full bg-blue-600 text-white font-bold py-2 rounded-xl shadow">儲存紀錄</button>
+        </form>
+      </div>
+    </div>
+    <div id="expenseModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 hidden">
+      <div class="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl">
+        <div class="flex justify-between items-center mb-4"><h3 id="expenseModalTitle" class="text-base font-bold">新增其他費用</h3><button onclick="closeModal('expenseModal')" class="text-slate-400"><i class="fa-solid fa-xmark"></i></button></div>
+        <form id="expenseForm" onsubmit="handleExpenseSubmit(event)" class="space-y-3">
+          <input type="hidden" id="expenseId">
+          <div><label class="block text-xs font-bold mb-1">項目名稱</label><input type="text" id="expenseName" required class="w-full border rounded-xl p-2"></div>
+          <div class="grid grid-cols-2 gap-2">
+            <div><label class="block text-xs font-bold mb-1">金額</label><input type="number" id="expenseAmount" required class="w-full border rounded-xl p-2"></div>
+            <div><label class="block text-xs font-bold mb-1">日期</label><input type="date" id="expenseDate" required class="w-full border rounded-xl p-2"></div>
+          </div>
+          <button type="submit" class="w-full bg-indigo-600 text-white font-bold py-2 rounded-xl shadow">儲存費用</button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="toast" class="fixed bottom-24 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-5 py-2 rounded-full text-xs font-semibold shadow-xl transition-all duration-300 translate-y-12 opacity-0 pointer-events-none z-50"></div>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+    import { getFirestore, doc, setDoc, collection, onSnapshot, addDoc, updateDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+    // 填入您的 Firebase 配置
+    const firebaseConfig = {
+      apiKey: "AIzaSyCT5Di7PuL0pF_nud4X6jBFuA3Qi670z_Y",
+      authDomain: "carapp-9b29d.firebaseapp.com",
+      projectId: "carapp-9b29d",
+      storageBucket: "carapp-9b29d.firebasestorage.app",
+      messagingSenderId: "1038941354124",
+      appId: "1:1038941354124:web:2d443e8fc0e422d64ee3a9"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const provider = new GoogleAuthProvider();
+    
+    const appId = 'driving-school-assistant-prod';
+
+    let currentUser = null;
+    let lessons = [];
+    let expenses = [];
+    let examDateStr = "";
+
+    // DOM 快取
+    const totalHoursEl = document.getElementById('totalHours');
+    const totalCostEl = document.getElementById('totalCost');
+    const lessonsListEl = document.getElementById('lessonsList');
+    const expensesListEl = document.getElementById('expensesList');
+    const syncStatusEl = document.getElementById('syncStatus');
+    const examCountdownCard = document.getElementById('examCountdownCard');
+    const examDateText = document.getElementById('examDateText');
+    const daysLeftEl = document.getElementById('daysLeft');
+    const settingsExamDateInput = document.getElementById('settingsExamDate');
+
+    // Google 登入方法
+    window.loginWithGoogle = async () => {
+      try {
+        syncStatusEl.innerHTML = `<i class="fa-solid fa-spinner animate-spin mr-1"></i> 登入中...`;
+        await signInWithPopup(auth, provider);
+        showToast("登入成功！");
+      } catch (error) {
+        console.error("登入失敗:", error);
+        if (error.code === 'auth/unauthorized-domain') {
+          alert("登入失敗：此網域尚未在 Firebase Console 的 Authorized domains 中授權！請務必前往設定。");
+        } else {
+          showToast("登入失敗，請重試");
+        }
+        renderUnauthenticatedUI();
+      }
+    };
+
+    // 登出方法
+    window.logoutGoogle = async () => {
+      if(confirm("確定要登出嗎？資料將安全保存在雲端。")) {
+        try {
+          await signOut(auth);
+          showToast("已成功登出");
+        } catch (error) {
+          showToast("登出失敗");
+        }
+      }
+    };
+
+    // 監聽登入狀態改變
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        currentUser = user;
+        // 顯示使用者頭像或暱稱
+        syncStatusEl.innerHTML = `<i class="fa-solid fa-circle-user text-emerald-400 mr-1"></i> ${user.displayName || '已同步'}`;
+        
+        // 顯示操作按鈕
+        document.getElementById('addLessonBtn').classList.remove('hidden');
+        document.getElementById('addExpenseBtn').classList.remove('hidden');
+        document.getElementById('quickExpenseCard').classList.remove('hidden');
+        document.getElementById('logoutCard').classList.remove('hidden');
+        document.getElementById('currentUserEmail').innerText = `目前帳戶：${user.email}`;
+
+        // 掛載監聽雲端資料庫
+        setupDataListeners();
+      } else {
+        currentUser = null;
+        renderUnauthenticatedUI();
+      }
+    });
+
+    // 當未登入時的 UI 表現
+    function renderUnauthenticatedUI() {
+      syncStatusEl.innerHTML = `<i class="fa-solid fa-user-slash text-slate-300 mr-1"></i> 未登入`;
+      document.getElementById('addLessonBtn').classList.add('hidden');
+      document.getElementById('addExpenseBtn').classList.add('hidden');
+      document.getElementById('quickExpenseCard').classList.add('hidden');
+      document.getElementById('logoutCard').classList.add('hidden');
+      examCountdownCard.classList.add('hidden');
+      
+      totalHoursEl.innerHTML = `0 <span class="text-sm font-normal">小時</span>`;
+      totalCostEl.innerHTML = `HK$0`;
+
+      const loginHtml = `
+        <div class="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center space-y-4 shadow-sm my-4">
+          <div class="text-4xl">🔐</div>
+          <h3 class="font-bold text-slate-800 text-base">啟用雲端永久同步</h3>
+          <p class="text-xs text-slate-500 leading-relaxed">請登入您的 Google 帳戶。系統會安全地將您的考車學車時數、筆記與開支永久綁定在您的帳號中，換手機或重新整理網頁紀錄都不會遺失。</p>
+          <button onclick="window.loginWithGoogle()" class="mx-auto flex items-center justify-center gap-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold py-2.5 px-5 rounded-xl shadow-sm transition w-full text-sm">
+            <svg class="w-4 h-4" viewBox="0 0 24 24"><path fill="#EA4335" d="M12 5.04c1.66 0 3.2.57 4.42 1.69l3.3-3.3C17.74 1.58 15.03 1 12 1 7.24 1 3.24 3.74 1.34 7.74l3.82 2.96C6.1 7.54 8.81 5.04 12 5.04z"/><path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.46c-.29 1.48-1.14 2.73-2.42 3.57l3.77 2.92c2.2-2.03 3.68-5.03 3.68-8.64z"/><path fill="#FBBC05" d="M5.16 14.22c-.24-.73-.38-1.5-.38-2.3 0-.8.14-1.57.38-2.3L1.34 6.66C.49 8.35 0 10.12 0 12s.49 3.65 1.34 5.34l3.82-3.12z"/><path fill="#34A853" d="M12 23c3.24 0 5.97-1.07 7.96-2.92l-3.77-2.92c-1.05.7-2.39 1.12-4.19 1.12-3.19 0-5.9-2.5-6.84-5.66L1.34 15.76C3.24 19.76 7.24 23 12 23z"/></svg>
+            使用 Google 帳戶登入
+          </button>
+        </div>
+      `;
+      lessonsListEl.innerHTML = loginHtml;
+      expensesListEl.innerHTML = loginHtml;
+    }
+
+    // 設定 Firestore 實時監聽 (路徑完全遵循嚴格架構)
+    function setupDataListeners() {
+      if (!currentUser) return;
+
+      // A. 課堂
+      const lessonsRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'lessons');
+      onSnapshot(lessonsRef, (snapshot) => {
+        lessons = [];
+        snapshot.forEach((doc) => { lessons.push({ id: doc.id, ...doc.data() }); });
+        renderLessons();
+        calculateStats();
+      });
+
+      // B. 費用
+      const expensesRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'expenses');
+      onSnapshot(expensesRef, (snapshot) => {
+        expenses = [];
+        snapshot.forEach((doc) => { expenses.push({ id: doc.id, ...doc.data() }); });
+        renderExpenses();
+        calculateStats();
+      });
+
+      // C. 設定/考期
+      const profileRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile', 'settings');
+      onSnapshot(profileRef, (docSnap) => {
+        if (docSnap.exists()) {
+          examDateStr = docSnap.data().examDate || "";
+          settingsExamDateInput.value = examDateStr;
+          updateExamCountdown();
+        }
+      });
+    }
+
+    // 數據統計與計算
+    function calculateStats() {
+      const totalHours = lessons.reduce((sum, item) => sum + Number(item.hours || 0), 0);
+      totalHoursEl.innerHTML = `${totalHours.toFixed(2)} <span class="text-sm font-normal">小時</span>`;
+
+      const lessonsCost = lessons.reduce((sum, item) => sum + Number(item.cost || 0), 0);
+      const expensesCost = expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+      totalCostEl.innerHTML = `HK$${(lessonsCost + expensesCost).toLocaleString()}`;
+    }
+
+    // 渲染課堂
+    function renderLessons() {
+      if (lessons.length === 0) {
+        lessonsListEl.innerHTML = `<div class="text-center py-10 text-slate-400 text-sm">目前沒有課堂紀錄，點擊上方新增。</div>`;
+        return;
+      }
+      // 按日期時間升序排序以生成正確的「第幾堂」
+      lessons.sort((a, b) => new Date(a.date + 'T' + (a.startTime || '00:00')) - new Date(b.date + 'T' + (b.startTime || '00:00')));
+      lessons.forEach((l, idx) => l.lessonNum = idx + 1);
+
+      // 降序排（最新的放上面）
+      const displayList = [...lessons].sort((a, b) => new Date(b.date + 'T' + (b.startTime || '00:00')) - new Date(a.date + 'T' + (a.startTime || '00:00')));
+
+      lessonsListEl.innerHTML = displayList.map(lesson => `
+        <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm relative">
+          <div class="flex justify-between items-start">
+            <div>
+              <span class="bg-blue-600 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md">第 ${lesson.lessonNum} 堂</span>
+              <span class="text-xs text-slate-500 ml-2">${lesson.startTime || ''} (${lesson.location || '培正道'})</span>
+              <h4 class="font-bold text-slate-800 mt-1">${lesson.date}</h4>
+            </div>
+            <div class="text-right">
+              <span class="font-black text-slate-800">HK$${lesson.cost}</span>
+              <div class="flex gap-2 mt-2 justify-end">
+                <button onclick="window.editLesson('${lesson.id}')" class="text-slate-400 hover:text-blue-600 text-xs"><i class="fa-solid fa-pen"></i></button>
+                <button onclick="window.deleteLesson('${lesson.id}')" class="text-slate-400 hover:text-red-600 text-xs"><i class="fa-solid fa-trash"></i></button>
+              </div>
+            </div>
+          </div>
+          ${lesson.notes ? `<div class="mt-2 text-xs bg-slate-50 p-2 rounded-xl text-slate-600"><strong>重點：</strong>${lesson.notes}</div>` : ''}
+        </div>
+      `).join('');
+    }
+
+    // 渲染費用
+    function renderExpenses() {
+      if (expenses.length === 0) {
+        expensesListEl.innerHTML = `<div class="text-center py-10 text-slate-400 text-sm">無其他費用紀錄。</div>`;
+        return;
+      }
+      expensesListEl.innerHTML = expenses.map(item => `
+        <div class="bg-white border border-slate-200 rounded-2xl p-3.5 shadow-sm flex justify-between items-center">
+          <div><h4 class="font-bold text-slate-800 text-sm">${item.name}</h4><p class="text-[11px] text-slate-400">${item.date}</p></div>
+          <div class="flex items-center space-x-3">
+            <span class="font-bold text-slate-800">HK$${item.amount}</span>
+            <button onclick="window.deleteExpense('${item.id}')" class="text-slate-400 hover:text-red-600 text-xs"><i class="fa-solid fa-trash"></i></button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function updateExamCountdown() {
+      if (!examDateStr) { examCountdownCard.classList.add('hidden'); return; }
+      const diff = new Date(examDateStr) - new Date();
+      const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+      examCountdownCard.classList.remove('hidden');
+      examDateText.innerText = new Date(examDateStr).toLocaleDateString('zh-HK', { month: 'long', day: 'numeric', hour: '2-digit', minute:'2-digit' });
+      daysLeftEl.innerText = days > 0 ? days : (days === 0 ? "🎉" : "--");
+    }
+
+    // 全域視窗操作及 CRUD 送出對接
+    window.handleLessonSubmit = async (e) => {
+      e.preventDefault(); if (!currentUser) return;
+      const id = document.getElementById('lessonId').value;
+      const data = {
+        date: document.getElementById('lessonDate').value,
+        startTime: document.getElementById('lessonStartTime').value,
+        endTime: document.getElementById('lessonEndTime').value,
+        hours: Number(document.getElementById('lessonHours').value),
+        cost: Number(document.getElementById('lessonCost').value),
+        location: document.getElementById('lessonLocationSelect').value,
+        status: document.getElementById('lessonStatus').value,
+        notes: document.getElementById('lessonNotes').value
+      };
+      if(id) await updateDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'lessons', id), data);
+      else await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'lessons'), data);
+      closeModal('lessonModal'); showToast("儲存成功");
+    };
+
+    window.editLesson = (id) => {
+      const l = lessons.find(lesson => lesson.id === id); if(!l) return;
+      document.getElementById('lessonId').value = l.id;
+      document.getElementById('lessonDate').value = l.date;
+      document.getElementById('lessonStartTime').value = l.startTime || '';
+      document.getElementById('lessonEndTime').value = l.endTime || '';
+      document.getElementById('lessonHours').value = l.hours || 0;
+      document.getElementById('lessonCost').value = l.cost || '';
+      document.getElementById('lessonLocationSelect').value = l.location || '培正道';
+      document.getElementById('lessonStatus').value = l.status || 'attended';
+      document.getElementById('lessonNotes').value = l.notes || '';
+      openModal('lessonModal');
+    };
+
+    window.deleteLesson = async (id) => {
+      if (confirm("確認刪除堂數？")) await deleteDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'lessons', id));
+    };
+
+    window.handleExpenseSubmit = async (e) => {
+      e.preventDefault(); if (!currentUser) return;
+      const data = {
+        name: document.getElementById('expenseName').value,
+        amount: Number(document.getElementById('expenseAmount').value),
+        date: document.getElementById('expenseDate').value
+      };
+      await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'expenses'), data);
+      closeModal('expenseModal');
+    };
+
+    window.deleteExpense = async (id) => {
+      if (confirm("確認刪除開支？")) await deleteDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'expenses', id));
+    };
+
+    window.addQuickExpense = async (name, amount) => {
+      if (!currentUser) return;
+      await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'expenses'), { name, amount, date: new Date().toISOString().split('T')[0] });
+      showToast("已捷徑新增開支");
+    };
+
+    window.saveExamDate = async () => {
+      if (!currentUser) return;
+      await setDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile', 'settings'), { examDate: settingsExamDateInput.value }, { merge: true });
+      showToast("考期已同步");
+    };
+  </script>
+
+  <script>
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+      document.querySelectorAll('nav button').forEach(btn => btn.classList.remove('text-blue-600', 'font-medium'));
+      document.getElementById(`btn-tab-${tabId}`).classList.add('text-blue-600', 'font-medium');
+    }
+    function openModal(modalId) { document.getElementById(modalId).classList.remove('hidden'); }
+    function closeModal(modalId) { document.getElementById(modalId).classList.add('hidden'); document.getElementById('lessonId').value=""; }
+    function calculateHours() {
+      const start = document.getElementById('lessonStartTime').value;
+      const end = document.getElementById('lessonEndTime').value;
+      if (start && end) {
+        const [sh, sm] = start.split(':').map(Number); const [eh, em] = end.split(':').map(Number);
+        let diff = (eh * 60 + em) - (sh * 60 + sm); if(diff < 0) diff += 1440;
+        const hrs = (diff / 60).toFixed(2); document.getElementById('lessonHours').value = hrs;
+        document.getElementById('lessonCost').value = Math.round((700 / 1.5) * hrs);
+      }
+    }
+    function toggleRoute(id) { document.getElementById(`${id}-content`).classList.toggle('hidden'); }
+    function showToast(m) {
+      const t = document.getElementById('toast'); t.innerText = m;
+      t.classList.remove('translate-y-12', 'opacity-0', 'pointer-events-none');
+      setTimeout(() => t.classList.add('translate-y-12', 'opacity-0', 'pointer-events-none'), 2000);
+    }
+  </script>
+</body>
+</html>
